@@ -1,21 +1,33 @@
-# descr -------------------------------------------------------------------
-project. <- 'LoA'
-out.     <- 'result.i.csv, fits.i'
-desc.    <- { 
-  'result.i / a table with all possible time-to-loss results; 
-   fits / a list of survival-fits 
-   result
-   (including time to diagnosis)'
-}
-# last change
-# 2019-10-01
-# 2020-10-18 T25FW
-# require -----------------------------------------------------------------
+#' ---
+#' title: "DM.TTE.R"
+#' author: "Christian Rummey"
+#' date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
+#' output:
+#'    html_document:
+#'      toc: true
+#'      code_folding: show
+#'      number_sections: no
+#'      toc_float: no
+#'      highlight: tango
+#' ---
+
+# creates
+# result.i / a table with all possible time-to-loss results; 
+# fits / a list of survival-fits 
+# result
+# (including time to diagnosis)'
+
+#+ setup, include=FALSE
 
 require(ReIns)
-source("../.DATA other/scores.lists.R")
+
+#' ### Data 
+
 # scores. <- read_rds('DATA derived/scores.rds')
 demo.   <- .dd.FA('demo') %>% filter(study == 'FACOMS')
+
+sjids <- readRDS('../DATA derived/long.data.paper1.clean.rds')$sjid %>% unique
+# currently 1000 patients, excluding point mutations, etc. 
 
 # select parameters and severity groups -----------------------------------
 
@@ -41,66 +53,67 @@ dt. <- bind_rows(
   fds,
   w25
   ) %>% 
-  .add.time(tm = 'agedur', keepadt = T) %>% 
-  .add.demo() %>% 
-  left_join(demo. %>% select(sjid, diag)) %>% 
-  filter( paramcd %in% c('fds','w25.i', .l.mFARS)) %>%
-  # filter( paramcd %in% c('fds')) %>%
-  # filter(!(paramcd %in% c('fane1','fane6','fane5','fane4','fane3b'))) %>%
-  # mutate( time = dur) %>% 
-  mutate(time = age) %>% 
+  # .add.time(tm = 'agedur', keepadt = T) %>% 
+  left_join(demo. %>% select(sjid, symp, sev.o, birthdt, age_bl, diag, pm)) %>% 
+  mutate( age = as.numeric(adt - birthdt)/365.25,
+          age = ifelse(is.na(age), age_bl+as.numeric(adt-min(adt))/365.25, age),
+          # age = ifelse(is.na(age), age_bl+avisitn-1, age),
+          dur = age-symp) %>% 
+  select(-birthdt) %>% 
+  # filter( paramcd %in% c('fds','w25.i', .l.mFARS)) %>%
+  # filter( paramcd %in% c('w25.i','fds','fane1','fane7')) %>%
   mutate( aval = floor(aval)) %>% 
   droplevels() %>%
   group_by( sjid, paramcd)
 
 table(dt.$paramcd)
 
-# scores for diagnosis parameter ------------------------------------------
-# 2020 October
-# symp to diag only makes sense with duration
-# otherwise you get age of diagnosis (!) -> tried now
-
-dt.sympdiag <- dt. %>%
-  filter( paramcd == 'fane7') %>% # could be any parameter (I used fane7 previously)
-  mutate( paramcd  = 'diagnosis' ) %>%
-  group_by(sjid) %>%
-  filter( dur     == min(dur)) %>%
-  ungroup %>%
-  # mutate( time     = diag-symp ) %>% # otherwise you get ages in the result!
-  mutate( time     = diag ) %>% # yes!
-  mutate( age      = diag ) %>%
-  mutate( time     = ifelse(is.na(time), 0, time)) %>% # unknown diag needs a zero
-  mutate( dur      =  0 ) %>%
-  mutate( avisitn  = -1 ) %>%
-  mutate( aval     =  1 ) # all are diagnosed by now!
-
-# dublicate those with diag ( without will be left censored / truncated )
-
-dt.sympdiag.0 <- dt.sympdiag %>%
-  filter(!is.na(diag)) %>%
-  mutate(adt     = adt - 1) %>% # adt is used to calcluate visit count later, removes one day
-  mutate(aval    = 0)
-
-dt.sympdiag %<>% 
-  bind_rows(dt.sympdiag.0)
-
-dt.sympdiag %<>% # group_by(sjid) %>% filter(symp<15) %>% 
-  arrange(sjid) %>% 
-  filter(!(time < 0 & aval == 0)) # removes the above added double lines for diag before symp
-
-rm(dt.sympdiag.0)
-
-dt.sympdiag %<>% 
-  mutate(time = ifelse(time <  0, 0    , time)) %>% # set negative times to 0 (or they get filtertered from tte below)
-  mutate(time = ifelse(time == 0, 0.001, time))     # make diag == symp visible in plots
+# # scores for diagnosis parameter ------------------------------------------
+# # 2020 October
+# # symp to diag only makes sense with duration
+# # otherwise you get age of diagnosis (!) -> tried now
+# 
+# dt.sympdiag <- dt. %>%
+#   filter( paramcd == 'fane7') %>% # could be any parameter (I used fane7 previously)
+#   mutate( paramcd  = 'diagnosis' ) %>%
+#   group_by(sjid) %>%
+#   filter( dur     == min(dur)) %>%
+#   ungroup %>%
+#   # mutate( time     = diag-symp ) %>% # otherwise you get ages in the result!
+#   mutate( time     = diag ) %>% # yes!
+#   mutate( age      = diag ) %>%
+#   mutate( time     = ifelse(is.na(time), 0, time)) %>% # unknown diag needs a zero
+#   mutate( dur      =  0 ) %>%
+#   mutate( avisitn  = -1 ) %>%
+#   mutate( aval     =  1 ) # all are diagnosed by now!
+# 
+# # dublicate those with diag ( without will be left censored / truncated )
+# 
+# dt.sympdiag.0 <- dt.sympdiag %>%
+#   filter(!is.na(diag)) %>%
+#   mutate(adt     = adt - 1) %>% # adt is used to calcluate visit count later, removes one day
+#   mutate(aval    = 0)
+# 
+# dt.sympdiag %<>% 
+#   bind_rows(dt.sympdiag.0)
+# 
+# dt.sympdiag %<>% # group_by(sjid) %>% filter(symp<15) %>% 
+#   arrange(sjid) %>% 
+#   filter(!(time < 0 & aval == 0)) # removes the above added double lines for diag before symp
+# 
+# rm(dt.sympdiag.0)
+# 
+# dt.sympdiag %<>% 
+#   mutate(time = ifelse(time <  0, 0    , time)) %>% # set negative times to 0 (or they get filtertered from tte below)
+#   mutate(time = ifelse(time == 0, 0.001, time))     # make diag == symp visible in plots
 
 # add to scores. ----------------------------------------------------------
 
-dt. %<>%
-  bind_rows(dt.sympdiag)
+# dt. %<>%
+#   bind_rows(dt.sympdiag)
 
-.ct(dt.sympdiag)
-rm(dt.sympdiag)
+# .ct(dt.sympdiag)
+# rm(dt.sympdiag)
 
 # bind_rows(scores.sympdiag, scores.sympdiag.0) %>% filter(sjid == 1) %>% arrange(adt)
 
@@ -114,6 +127,7 @@ dt. %<>% # two visits with the same date
 # dt. %>% filter(sjid == 4900, paramcd == 'w25.i')
 
 dt. %<>%
+  mutate  ( time = dur) %>% 
   group_by( sjid, paramcd) %>%
   arrange ( sjid, paramcd, time) %>% 
   # filter(sjid == 118, paramcd == 'fds')
@@ -141,15 +155,21 @@ fits.i  <- list()
 # par <- 'fane7'; thr <- 1 ; bx <-  "<15y"
 # par <- 'diagnosis'; thr <- 1 ; bx <-  "<15y"
 
+dt. %<>% filter(sjid %in% sjids)
+
 dt. %<>% 
   mutate( sever = factor('all'))
   # mutate( sever = sev.o)
   # mutate( sever = cut( symp, c( 0,    14, 24, 75), include.lowest = T, labels = c(         '<15y', '15-24y', '>24y')))
 
 dt. %<>% 
-  mutate( time = age)
+  bind_rows(dt. %>% mutate(sev.o = 'all'))
 
-
+dt. %<>% 
+  mutate( sev.o = factor(sev.o, c('0-7y','8-14y','15-24y','>24y','all'))) %>% 
+  mutate( sever = sev.o) %>% 
+  ungroup %>% 
+  mutate( time = age )
 
 for(par in levels(factor(dt.$paramcd))) { 
   
@@ -221,7 +241,7 @@ for(par in levels(factor(dt.$paramcd))) {
     # fit
     
     fits   <- list() ; i = 1
-    stable <- tbl_df(data.frame())
+    stable <- tibble::as_tibble(data.frame())
 
     # Run Models ---- 
 
@@ -254,7 +274,7 @@ for(par in levels(factor(dt.$paramcd))) {
         f_nx        <- paste(f_n,"lcn",sep=".")
         fits.i[f_nx] <- m.fit["fit"]
         i = i + 1
-        result  <-  t(summary(m.fit$fit)$table) %>% tbl_df() %>% mutate(strata = bx) 
+        result  <-  t(summary(m.fit$fit)$table) %>% tibble::as_tibble() %>% mutate(strata = bx) 
         result$q25 <- unname(quantile(m.fit$fit, conf.int = F)[1])
         result$q75 <- unname(quantile(m.fit$fit, conf.int = F)[3])
         result %<>% mutate(censoring = "lcn")
@@ -275,7 +295,7 @@ for(par in levels(factor(dt.$paramcd))) {
         f_nx        <- paste(f_n,"ooe",sep=".")
         fits.i[f_nx] <- m.fit["fit"]
         i = i + 1
-        result   <-  t(summary(m.fit$fit)$table) %>% tbl_df() %>% mutate(strata = bx) 
+        result   <-  t(summary(m.fit$fit)$table) %>% tibble::as_tibble() %>% mutate(strata = bx) 
         result$q25 <- unname(quantile(m.fit$fit, conf.int = F)[1])
         result$q75 <- unname(quantile(m.fit$fit, conf.int = F)[3])
         result  %<>% mutate(censoring = "ooe")
@@ -288,7 +308,7 @@ for(par in levels(factor(dt.$paramcd))) {
         
         print(paste("--- ", par, " --- ", thr ," --- ", bx, " --- empty frame"))
         
-        result = tbl_df( data.frame( a = c(NA), b = c(NA), c = c(NA), d = c(NA), e = c(NA), f = c(NA),
+        result = tibble::as_tibble( data.frame( a = c(NA), b = c(NA), c = c(NA), d = c(NA), e = c(NA), f = c(NA),
                                      g = c(NA), h = c(NA) ,i = c(NA))) %>% mutate(strata = bx)
         names(result) <-  c("records", "n.max", "n.start", "events", "*rmean", "*se(rmean)","median", "0.95LCL", "0.95UCL","strata")
         result %<>% mutate(censoring = "lcn")
