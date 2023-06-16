@@ -43,4 +43,6 @@ vignettes/*.pdf
 *.html
 *.pptx
 DATA derived/
+Results/
 *.Rproj
+code.sort/
