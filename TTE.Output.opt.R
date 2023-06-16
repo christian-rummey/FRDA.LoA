@@ -2,28 +2,13 @@
 # require -----------------------------------------------------------------
 require(survminer)
 
-# result.i <- read_rds("DATA derived/TTE.ADL.EFACTS.age.result.txt.rds")
-# fits.i   <- read_rds("DATA derived/TTE.ADL.EFACTS.age.fits.rds")
-
 # p0 LoA ------------------------------------------------------------------
 
 with(result.i, table(paramcd, thr, censoring))
 
-# grid. <- c(
-#   'a7.walk' , c(5),
-#   'w25.iu'  , c(1),
-#   'fds', c(5)    
-# )
-
 res.tmp <- result.i %>%
   filter(thr != 0) %>%
-  filter(paramcd == 'fds') %>% 
-  # filter(
-  #     # ( paramcd == 'fane7'  & thr %in% c( 5 ) ) |
-  #     # ( paramcd == 'w25.i'  & thr %in% c( 1 ) ) |
-  #   ( paramcd == 'fds'    & thr %in% c( 1,2,3, 4 ) ) |
-  #   ( paramcd == 'fds'    & thr %in% c( 5 ) )
-  # ) %>%
+  # filter(paramcd == 'fds') %>% 
   filter(censoring == 'lcn') %>%
   # filter(strata    == '<15y') %>%
   mutate(fn        =  paste(paramcd, thr,strata,censoring, sep='.')) %>%
